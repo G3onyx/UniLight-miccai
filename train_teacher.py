@@ -1,43 +1,50 @@
+import argparse
 import os
-import torch
-import torch.nn as nn
-import numpy as np
-from tqdm import tqdm
 import random
-import time
+
+import numpy as np
+import torch
+from tqdm import tqdm
 
 # Import existing modules
-from models.teacher import get_teacher_model
+from config import get_paths
 from data.dataset import get_datasets
+from models.teacher import get_teacher_model
 from utils.loss_metrics import WeightedDiceBCELoss, calculate_dice
 
 # ============================================================
 # 1. Configuration
 # ============================================================
-DATASET_TYPE = "brats2023"  # Choose "brats2023" or "msd"
-CURRENT_FOLD = 4
+parser = argparse.ArgumentParser(description="Teacher Training")
+parser.add_argument("--dataset", type=str, default="brats2023", choices=["brats2023", "msd"])
+parser.add_argument("--data_dir", type=str, default=None, help="Override dataset directory")
+parser.add_argument("--epochs", type=int, default=100)
+parser.add_argument("--fold", type=int, default=4)
+args = parser.parse_args()
+
+DATASET_TYPE = args.dataset  # Choose "brats2023" or "msd"
+CURRENT_FOLD = args.fold
 NUM_FOLDS = 5
 SEED = 42
 
-# Path Configuration
-if DATASET_TYPE == "brats2023":
-    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "brats2023", "Training")
-else:
-    DATA_DIR = "/kaggle/input/msd-brain-tumour/Task01_BrainTumour"
+# Hyperparameters
+TOTAL_EPOCHS = args.epochs
+BATCH_SIZE = 2
+LR = 1e-4
+ROI_SIZE = (128, 128, 128)
+VAL_INTERVAL = 1
 
-# Output directory for Teacher model
-SAVE_DIR = f"./teacher_results_{DATASET_TYPE}_fold_{CURRENT_FOLD}"
+# Get paths dynamically
+paths = get_paths(DATASET_TYPE, CURRENT_FOLD, args.data_dir)
+DATA_DIR = paths["data_dir"]
+SAVE_DIR = paths["teacher_save_dir"]
 os.makedirs(SAVE_DIR, exist_ok=True)
 
 BEST_PATH = os.path.join(SAVE_DIR, "best_teacher.pth")
 LAST_PATH = os.path.join(SAVE_DIR, "last_teacher.pth")
 
-# Hyperparameters
-TOTAL_EPOCHS = 100
-BATCH_SIZE = 2
-LR = 1e-4
-ROI_SIZE = (128, 128, 128)
-VAL_INTERVAL = 1
+print(f"Environment: {'Kaggle' if paths['is_kaggle'] else 'Local'}")
+print(f"Dataset: {DATASET_TYPE} | Fold: {CURRENT_FOLD} | Data Dir: {DATA_DIR}")
 
 
 # ============================================================

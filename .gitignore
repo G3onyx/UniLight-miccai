@@ -1,7 +1,10 @@
+# Python virtual environments
+.venv/
+venv/
+env/
 
-# Model checkpoints
-checkpoints/
-*.pth
+# IDE settings
+.idea/
 
 # Python cache
 __pycache__/
@@ -30,3 +33,7 @@ saxnet_student_epoch1_test_v1/
 *.log
 wandb/
 runs/
+
+# OS-generated files
+.DS_Store
+Thumbs.db

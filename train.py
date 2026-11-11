@@ -1,15 +1,18 @@
+import argparse
 import os
+import random
+import time
+
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import numpy as np
 from tqdm import tqdm
-import random
-import time
-from models.teacher import get_teacher_model, load_teacher_weights
 
-from models.student import LATUPStudent
+from config import get_paths
 from data.dataset import get_datasets
+from models.student import LATUPStudent
+from models.teacher import get_teacher_model, load_teacher_weights
 from utils.loss_metrics import (
     WeightedDiceBCELoss, DWKDLoss, BoundaryLoss,
     calculate_dice, calculate_hd95_per_channel
@@ -18,46 +21,20 @@ from utils.loss_metrics import (
 # ============================================================
 # 1. Core Configuration
 # ============================================================
-DATASET_TYPE = "msd"  # Choose "brats2023" or "msd"
-CURRENT_FOLD = 4  # from [0,4]
+parser = argparse.ArgumentParser(description="Student Training")
+parser.add_argument("--dataset", type=str, default="brats2023", choices=["brats2023", "msd"])
+parser.add_argument("--data_dir", type=str, default=None, help="Override dataset directory")
+parser.add_argument("--teacher_weights", type=str, default=None, help="Override teacher weights path")
+parser.add_argument("--epochs", type=int, default=100)
+parser.add_argument("--fold", type=int, default=4)
+args = parser.parse_args()
+
+DATASET_TYPE = args.dataset  # Choose "brats2023" or "msd"
+CURRENT_FOLD = args.fold  # from [0,4]
 NUM_FOLDS = 5
 SEED = 42
 
-# Path Configurations
-if DATASET_TYPE == "brats2023":
-    DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "brats2023", "Training")
-    TEACHER_WEIGHTS = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "checkpoints",
-        "BraTS2023",
-        "best_teacher_2023.pth"
-    )
-    RESUME_LAST_PATH = None
-    RESUME_BEST_PATH = None
-else:
-    DATA_DIR = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "data",
-        "msd",
-        "Task01_BrainTumour"
-    )
-    TEACHER_WEIGHTS = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)),
-        "checkpoints",
-        "MSD-BTS",
-        "best_teacher_msd.pth"
-    )
-    RESUME_LAST_PATH = None
-    RESUME_BEST_PATH = None
-
-SAVE_DIR = f"./kd_results_{DATASET_TYPE}_fold_{CURRENT_FOLD}"
-SDF_DIR = os.path.join(SAVE_DIR, "sdfs")
-os.makedirs(SDF_DIR, exist_ok=True)
-
-BEST_PATH = os.path.join(SAVE_DIR, "best_student.pt")
-LAST_PATH = os.path.join(SAVE_DIR, "last_student.pth")
-
-TOTAL_EPOCHS = 1
+TOTAL_EPOCHS = args.epochs
 BATCH_SIZE = 2
 LR = 1e-4
 ROI_SIZE = (128, 128, 128)
@@ -72,6 +49,24 @@ GAMMA_RCE = 0.1
 RCE_T = 0.9
 USE_BOUNDARY = True
 BOUNDARY_WEIGHT = 0.1
+
+
+# Get paths dynamically
+paths = get_paths(DATASET_TYPE, CURRENT_FOLD, args.data_dir, args.teacher_weights)
+DATA_DIR = paths["data_dir"]
+TEACHER_WEIGHTS = paths["teacher_weights"]
+SAVE_DIR = paths["student_save_dir"]
+
+SDF_DIR = os.path.join(SAVE_DIR, "sdfs")
+os.makedirs(SDF_DIR, exist_ok=True)
+
+BEST_PATH = os.path.join(SAVE_DIR, "best_student.pt")
+LAST_PATH = os.path.join(SAVE_DIR, "last_student.pth")
+RESUME_LAST_PATH = None
+RESUME_BEST_PATH = None
+
+print(f"Environment: {'Kaggle' if paths['is_kaggle'] else 'Local'}")
+print(f"Dataset: {DATASET_TYPE} | Fold: {CURRENT_FOLD} | Data Dir: {DATA_DIR} | Teacher Weights: {TEACHER_WEIGHTS}")
 
 
 # ============================================================
