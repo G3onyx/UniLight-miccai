@@ -1,6 +1,5 @@
 import argparse
 import os
-import random
 import time
 
 import numpy as np
@@ -9,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from tqdm import tqdm
 
-from config import get_paths
+from config import get_paths, set_seed, get_rng_state, set_rng_state, save_checkpoint
 from data.dataset import get_datasets
 from models.student import LATUPStudent
 from models.teacher import get_teacher_model, load_teacher_weights
@@ -62,7 +61,7 @@ os.makedirs(SDF_DIR, exist_ok=True)
 
 BEST_PATH = os.path.join(SAVE_DIR, "best_student.pt")
 LAST_PATH = os.path.join(SAVE_DIR, "last_student.pth")
-RESUME_LAST_PATH = None
+RESUME_LAST_PATH = LAST_PATH
 RESUME_BEST_PATH = None
 
 print(f"Environment: {'Kaggle' if paths['is_kaggle'] else 'Local'}")
@@ -72,15 +71,6 @@ print(f"Dataset: {DATASET_TYPE} | Fold: {CURRENT_FOLD} | Data Dir: {DATA_DIR} | 
 # ============================================================
 # 2. Randomness and Environment Initialization
 # ============================================================
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 set_seed(SEED)
 
@@ -259,6 +249,9 @@ def main():
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
         start_epoch = ckpt['epoch'] + 1
         best_dice = ckpt.get('best_dice', 0.0)
+        if not set_rng_state(ckpt.get('rng_state')):
+            set_seed(SEED + ckpt['epoch'])
+            print("Warning: legacy checkpoint has no RNG state, using a deterministic new RNG sequence.")
 
     # 2. Check Best Checkpoint
     if RESUME_BEST_PATH and os.path.exists(RESUME_BEST_PATH):
@@ -390,22 +383,23 @@ def main():
             # Save Best Model
             if mean_val_dice > best_dice:
                 best_dice = mean_val_dice
-                torch.save({
+                save_checkpoint({
                     'epoch': epoch,
                     'model_state_dict': student_model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
-                    'best_dice': best_dice,
+                    'best_dice': float(best_dice),
                 }, BEST_PATH)
                 print(f'Saving Best Model: {best_dice:.4f}')
             else:
                 print(f'(Best was {best_dice:.4f})')
 
         # Save Last Checkpoint
-        torch.save({
+        save_checkpoint({
             'epoch': epoch,
             'model_state_dict': student_model.state_dict(),
             'optimizer_state_dict': optimizer.state_dict(),
-            'best_dice': best_dice,
+            'best_dice': float(best_dice),
+            'rng_state': get_rng_state(),
         }, LAST_PATH)
 
     print(f"\nTraining Complete! Best Dice: {best_dice:.4f}")

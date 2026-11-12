@@ -1,13 +1,12 @@
 import argparse
 import os
-import random
 
 import numpy as np
 import torch
 from tqdm import tqdm
 
 # Import existing modules
-from config import get_paths
+from config import get_paths, set_seed, get_rng_state, set_rng_state, save_checkpoint
 from data.dataset import get_datasets
 from models.teacher import get_teacher_model
 from utils.loss_metrics import WeightedDiceBCELoss, calculate_dice
@@ -50,15 +49,6 @@ print(f"Dataset: {DATASET_TYPE} | Fold: {CURRENT_FOLD} | Data Dir: {DATA_DIR}")
 # ============================================================
 # 2. Setup
 # ============================================================
-def set_seed(seed=42):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
-    torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
-
-
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 set_seed(SEED)
 
@@ -109,6 +99,14 @@ def main():
         ckpt = torch.load(LAST_PATH, map_location=device)
         model.load_state_dict(ckpt['model_state_dict'])
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
+        if "scheduler_state_dict" in ckpt:
+            scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+        else:
+            scheduler.step(ckpt["epoch"])
+            print("Warning: legacy checkpoint has no scheduler state, position reconstructed from epoch.")
+        if not set_rng_state(ckpt.get("rng_state")):
+            set_seed(SEED + ckpt['epoch'])
+            print("Warning: legacy checkpoint has no RNG state, using a deterministic new RNG sequence.")
         start_epoch = ckpt['epoch'] + 1
         best_dice = ckpt.get('best_dice', 0.0)
 
@@ -180,19 +178,23 @@ def main():
             # Update Best Model
             if mean_val_dice > best_dice:
                 best_dice = mean_val_dice
-                torch.save({
-                    'epoch': epoch,
-                    'model_state_dict': model.state_dict(),
-                    'best_dice': best_dice,
+
+                save_checkpoint({
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "best_dice": float(best_dice),
                 }, BEST_PATH)
+
                 print(f"New Best Teacher Saved! Score: ({best_dice:.4f})")
 
         # Save Last Checkpoint (for potential resumption)
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'best_dice': best_dice
+        save_checkpoint({
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "best_dice": float(best_dice),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "rng_state": get_rng_state(),
         }, LAST_PATH)
 
     print(f"\nTeacher Training Completed! Highest Val Dice achieved: {best_dice:.4f}")
