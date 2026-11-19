@@ -63,8 +63,9 @@ BEST_PATH = os.path.join(SAVE_DIR, "best_student.pt")
 LAST_PATH = os.path.join(SAVE_DIR, "last_student.pth")
 RESUME_LAST_PATH = LAST_PATH
 RESUME_BEST_PATH = None
+IS_KAGGLE = paths["is_kaggle"]
 
-print(f"Environment: {'Kaggle' if paths['is_kaggle'] else 'Local'}")
+print(f"Environment: {'Kaggle' if IS_KAGGLE else 'Local'}")
 print(f"Dataset: {DATASET_TYPE} | Fold: {CURRENT_FOLD} | Data Dir: {DATA_DIR} | Teacher Weights: {TEACHER_WEIGHTS}")
 
 
@@ -268,8 +269,16 @@ def main():
 
     print(f"Starting training: Epoch {start_epoch} - {TOTAL_EPOCHS}, Best Dice: {best_dice:.4f}")
 
+    # Session timeout setup
+    safety_timeout = False
+    epoch_durations = []
+    max_session_seconds = 11.5 * 3600 if IS_KAGGLE else None
+    session_start_time = float(os.environ.get("KAGGLE_SESSION_START", time.time()))
+
     # --- Training Loop ---
     for epoch in range(start_epoch, TOTAL_EPOCHS + 1):
+        epoch_start_time = time.time()
+
         student_model.train()
         epoch_loss = 0.0
         train_dices = []
@@ -402,22 +411,41 @@ def main():
             'rng_state': get_rng_state(),
         }, LAST_PATH)
 
-    print(f"\nTraining Complete! Best Dice: {best_dice:.4f}")
+        # Safety timeout check
+        if IS_KAGGLE:
+            epoch_durations.append(time.time() - epoch_start_time)
+            avg_epoch_time = sum(epoch_durations) / len(epoch_durations)
+            est_next_epoch = max(avg_epoch_time, max(epoch_durations)) * 1.15
+            elapsed_session = time.time() - session_start_time
+            remaining_session = max_session_seconds - elapsed_session
 
-    dummy_shape = (1, 4, *ROI_SIZE)
-    print("\n===== Comprehensive Efficiency Benchmark =====")
+            if epoch < TOTAL_EPOCHS and remaining_session < est_next_epoch:
+                safety_timeout = True
+                print(
+                    f"\n[Safety timeout] Stopping after Epoch {epoch}/{TOTAL_EPOCHS}. "
+                    f"Elapsed: {elapsed_session / 3600:.2f}h | "
+                    f"Remaining buffer: {remaining_session / 60:.1f}m | "
+                    f"Est. next epoch: {est_next_epoch / 60:.1f}m"
+                )
+                break
 
-    # Benchmark Teacher
-    res_t = benchmark_model(teacher_model, "Teacher (UNet)", dummy_shape, device)
+    if not safety_timeout:
+        print(f"\nTraining Complete! Best Dice: {best_dice:.4f}")
 
-    # Benchmark Student
-    # Note: DS is disabled here to measure actual inference latency in production
-    student_model_eval = LATUPStudent(in_channels=4, out_channels=3, base_filters=16, deep_supervision=False).to(device)
-    student_model_eval.load_state_dict(student_model.state_dict(), strict=False)
-    res_s = benchmark_model(student_model_eval, "Student (LATUP)", dummy_shape, device)
+        dummy_shape = (1, 4, *ROI_SIZE)
+        print("\n===== Comprehensive Efficiency Benchmark =====")
 
-    # Print final comparison table
-    print_table([res_t, res_s])
+        # Benchmark Teacher
+        res_t = benchmark_model(teacher_model, "Teacher (UNet)", dummy_shape, device)
+
+        # Benchmark Student
+        # Note: DS is disabled here to measure actual inference latency in production
+        student_model_eval = LATUPStudent(in_channels=4, out_channels=3, base_filters=16, deep_supervision=False).to(device)
+        student_model_eval.load_state_dict(student_model.state_dict(), strict=False)
+        res_s = benchmark_model(student_model_eval, "Student (LATUP)", dummy_shape, device)
+
+        # Print final comparison table
+        print_table([res_t, res_s])
 
 
 if __name__ == "__main__":
