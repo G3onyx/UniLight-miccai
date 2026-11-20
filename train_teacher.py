@@ -96,7 +96,7 @@ def main():
     # Resume training logic
     if os.path.exists(LAST_PATH):
         print(f"Resuming training from checkpoint: {LAST_PATH}")
-        ckpt = torch.load(LAST_PATH, map_location=device)
+        ckpt = torch.load(LAST_PATH, map_location=device, weights_only=False)
         model.load_state_dict(ckpt['model_state_dict'])
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
         if "scheduler_state_dict" in ckpt:

@@ -220,7 +220,7 @@ def main():
     ).to(device)
 
     try:
-        teacher_ckpt = torch.load(TEACHER_WEIGHTS, map_location='cpu')
+        teacher_ckpt = torch.load(TEACHER_WEIGHTS, map_location='cpu', weights_only=False)
         sd = teacher_ckpt['model_state_dict'] if 'model_state_dict' in teacher_ckpt else teacher_ckpt
         teacher_model.load_state_dict(sd, strict=False)
         print("Teacher model loaded successfully")
@@ -245,7 +245,7 @@ def main():
 
     # 1. Resume from Last Checkpoint
     if RESUME_LAST_PATH and os.path.exists(RESUME_LAST_PATH):
-        ckpt = torch.load(RESUME_LAST_PATH, map_location=device)
+        ckpt = torch.load(RESUME_LAST_PATH, map_location=device, weights_only=False)
         student_model.load_state_dict(ckpt['model_state_dict'])
         optimizer.load_state_dict(ckpt['optimizer_state_dict'])
         start_epoch = ckpt['epoch'] + 1
@@ -256,7 +256,7 @@ def main():
 
     # 2. Check Best Checkpoint
     if RESUME_BEST_PATH and os.path.exists(RESUME_BEST_PATH):
-        ckpt_best = torch.load(RESUME_BEST_PATH, map_location='cpu')
+        ckpt_best = torch.load(RESUME_BEST_PATH, map_location='cpu', weights_only=False)
         actual_best = ckpt_best.get('best_dice', 0.0)
         if actual_best > best_dice:
             best_dice = actual_best

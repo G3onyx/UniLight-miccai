@@ -26,7 +26,7 @@ def load_teacher_weights(model, weight_path, device):
         print(f"Teacher weights not found at {weight_path}")
         return model
 
-    checkpoint = torch.load(weight_path, map_location=device)
+    checkpoint = torch.load(weight_path, map_location=device, weights_only=False)
 
     # Handle different saving formats
     if isinstance(checkpoint, dict):
