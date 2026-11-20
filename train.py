@@ -272,7 +272,7 @@ def main():
     # Session timeout setup
     safety_timeout = False
     epoch_durations = []
-    max_session_seconds = 11.5 * 3600 if IS_KAGGLE else None
+    max_session_seconds = max(0.0, float(os.environ.get("KAGGLE_MAX_QUOTA_HOURS", 11.5)) * 3600 - 300)
     session_start_time = float(os.environ.get("KAGGLE_SESSION_START", time.time()))
 
     # --- Training Loop ---
